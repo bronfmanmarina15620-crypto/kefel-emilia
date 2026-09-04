@@ -88,14 +88,12 @@
 <body>
 <div class="wrap">
 
-
   <!-- ============ PRACTICE ============ -->
   <div id="practice">
     <div class="top">
       <div class="hello">היי <span>אמיליה</span>! בואי נתרגל כפל</div>
       <button class="ghost" id="btnParent">הורים</button>
     </div>
-
 
     <div class="stats">
       <div class="chip"><b id="sCount">0</b><small>תרגילים</small></div>
@@ -104,19 +102,16 @@
     </div>
     <div class="sync" id="syncStatus"></div>
 
-
     <div class="qcard">
       <div class="q" id="qText">— × — = ?</div>
       <div class="ans" id="ansBox">?</div>
       <div class="msg" id="msg"></div>
     </div>
 
-
     <div class="pad" id="pad"></div>
     <button class="send" id="btnReport">שלחי דוח לאמא</button>
     <button class="copy" id="btnCopy">העתיקי את הדוח</button>
   </div>
-
 
   <!-- ============ PIN ============ -->
   <div id="pinScreen" class="hidden">
@@ -131,7 +126,6 @@
     </div>
   </div>
 
-
   <!-- ============ PARENT ============ -->
   <div id="parent" class="hidden">
     <div class="top">
@@ -142,13 +136,11 @@
     <button class="danger" id="btnReset">איפוס כל הנתונים</button>
   </div>
 
-
 </div>
 <script>
 "use strict";
 /* ---------------------------------------------------------------
    לוח הכפל של אמיליה — localStorage cache + Supabase cloud sync.
-
 
    ADAPTIVE WEIGHTING
    Every fact (a×b, 1..10) keeps: seen, correct, wrong, streak of
@@ -161,30 +153,25 @@
    Next question = weighted random pick, never the same fact twice in a row.
 ----------------------------------------------------------------*/
 
-
 var CLOUD = {
   url: "https://nrxhjzmmmzqjytmdgzjg.supabase.co",
   anonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yeGhqem1tbXpxanl0bWRnempnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NDg3MTAsImV4cCI6MjEwNDEyNDcxMH0.5KYX69e1AyXqtHHRejFarK-r1yoXdmlpav2Oazb2WIs",
   rowId: "emilia"
 };
 
-
 var MAX = 10, PIN = "2604", IDLE_MS = 3 * 60 * 1000, KEY = "kefel_amelia_v1";
 var mem = null; // fallback if localStorage is blocked
 var pushTimer = null;
 var syncEl = null;
 
-
 function cloudConfigured(){
   return CLOUD.url && CLOUD.url.indexOf("https://nrxhjzmmmzqjytmdgzjg.supabase.co") === -1;
 }
-
 
 function setSync(text){
   if(!syncEl) syncEl = document.getElementById("syncStatus");
   if(syncEl) syncEl.textContent = text || "";
 }
-
 
 function blank(){ return { facts:{}, sessions:[], answers:0 }; }
 function load(){
@@ -214,7 +201,6 @@ function schedulePush(){
   }, 800);
 }
 
-
 function cloudHeaders(){
   return {
     "apikey": CLOUD.anonKey,
@@ -222,7 +208,6 @@ function cloudHeaders(){
     "Content-Type": "application/json"
   };
 }
-
 
 function cloudPull(){
   if(!cloudConfigured()){
@@ -261,7 +246,6 @@ function cloudPull(){
   });
 }
 
-
 function cloudPush(){
   if(!cloudConfigured()) return Promise.resolve(false);
   setSync("שומר בענן…");
@@ -287,12 +271,10 @@ function cloudPush(){
   });
 }
 
-
 var db = load();
 if(!db.facts) db.facts = {};
 if(!db.sessions) db.sessions = [];
 if(typeof db.answers !== "number") db.answers = 0;
-
 
 function fkey(a,b){ return (a<b? a+"x"+b : b+"x"+a); }
 function fact(a,b){
@@ -301,7 +283,6 @@ function fact(a,b){
   return db.facts[k];
 }
 function parseKey(k){ var p = k.split("x"); return [parseInt(p[0],10), parseInt(p[1],10)]; }
-
 
 /* ---------------- sessions ---------------- */
 var session = null;
@@ -320,7 +301,6 @@ function touchSession(){
   if(dt > 0 && dt < 60000) s.ms += dt;   // cap idle gaps so time stays honest
   s.last = now;
 }
-
 
 /* ---------------- question picking ---------------- */
 function weightOf(a,b){
@@ -354,12 +334,10 @@ function nextQuestion(){
   render();
 }
 
-
 /* ---------------- practice UI ---------------- */
 var typed = "", locked = false;
 var qText = document.getElementById("qText"), ansBox = document.getElementById("ansBox"),
     msg = document.getElementById("msg");
-
 
 function render(){
   qText.textContent = cur.a + " × " + cur.b + " = ?";
@@ -372,7 +350,6 @@ function render(){
   document.getElementById("sAcc").textContent = s.q ? Math.round(100*s.correct/s.q) + "%" : "—";
 }
 var streakNow = 0;
-
 
 var PRAISE = ["מדויק!","נכון מאוד!","כל הכבוד!","יפה!","בדיוק!","אלופה!"];
 function submit(){
@@ -415,7 +392,6 @@ function submit(){
   document.getElementById("sAcc").textContent = Math.round(100*s.correct/s.q) + "%";
 }
 
-
 var pad = document.getElementById("pad");
 ["1","2","3","4","5","6","7","8","9","מחק","0","בדקי"].forEach(function(lab){
   var b = document.createElement("button");
@@ -443,7 +419,6 @@ document.addEventListener("keydown", function(e){
   }
 });
 
-
 /* ---------------- helpers ---------------- */
 function pad2(n){ return (n<10?"0":"") + n; }
 function fmtDate(ts){ var d = new Date(ts); return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+d.getFullYear(); }
@@ -466,7 +441,6 @@ function hardest(n){
   });
   return arr.slice(0,n);
 }
-
 
 /* ---------------- WhatsApp report ---------------- */
 function reportText(){
@@ -515,7 +489,6 @@ document.getElementById("btnCopy").addEventListener("click", function(){
   }else{ window.prompt("העתיקי את הדוח:", t); }
 });
 
-
 /* ---------------- parent view ---------------- */
 var scr = { practice: document.getElementById("practice"), pin: document.getElementById("pinScreen"), parent: document.getElementById("parent") };
 function show(name){
@@ -552,7 +525,6 @@ document.getElementById("btnReset").addEventListener("click", function(){
   }
 });
 
-
 function buildParent(){
   var host = document.getElementById("parentBody");
   var real = db.sessions.filter(function(s){ return s.q > 0; });
@@ -563,7 +535,6 @@ function buildParent(){
   var tq = 0, tc = 0, tms = 0;
   real.forEach(function(s){ tq += s.q; tc += s.correct; tms += s.ms; });
 
-
   var h = '<div class="panel">';
   h += '<h2>סך הכול</h2><table>';
   h += '<tr><th>ישיבות תרגול</th><td>' + real.length + '</td></tr>';
@@ -572,7 +543,6 @@ function buildParent(){
   h += '<tr><th>זמן תרגול מצטבר</th><td>' + fmtDur(tms) + '</td></tr>';
   h += '</table></div>';
 
-
   h += '<h3>ישיבות תרגול</h3><div class="panel"><table>';
   h += '<tr><th>תאריך</th><th>שעה</th><th>זמן</th><th>תרגילים</th><th>הצלחה</th></tr>';
   real.slice().reverse().slice(0,25).forEach(function(s){
@@ -580,7 +550,6 @@ function buildParent(){
          '</td><td>' + s.correct + '/' + s.q + '</td><td>' + Math.round(100*s.correct/s.q) + '%</td></tr>';
   });
   h += '</table></div>';
-
 
   var hard = hardest(8);
   h += '<h3>התרגילים הקשים ביותר</h3><div class="panel">';
@@ -596,7 +565,6 @@ function buildParent(){
   }
   h += '</div>';
 
-
   h += '<h3>מפת לוח הכפל</h3><div class="panel"><div class="grid">';
   h += '<div class="cell h">×</div>';
   for(var c=1; c<=MAX; c++) h += '<div class="cell h">' + c + '</div>';
@@ -611,10 +579,8 @@ function buildParent(){
   }
   h += '</div><div class="note">ירוק — שולטת, כתום — עוד לא יציב, אדום — צריך תרגול. נקודה — עוד לא נשאלה.</div></div>';
 
-
   host.innerHTML = h;
 }
-
 
 /* ---------------- go ---------------- */
 syncEl = document.getElementById("syncStatus");
