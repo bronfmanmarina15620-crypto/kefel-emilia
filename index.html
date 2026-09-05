@@ -165,7 +165,7 @@ var pushTimer = null;
 var syncEl = null;
 
 function cloudConfigured(){
-  return CLOUD.url && CLOUD.url.indexOf("https://nrxhjzmmmzqjytmdgzjg.supabase.co") === -1;
+  return !!(CLOUD.url && CLOUD.anonKey && CLOUD.url.indexOf("https://") === 0 && CLOUD.anonKey.length > 20);
 }
 
 function setSync(text){
@@ -215,7 +215,7 @@ function cloudPull(){
     return Promise.resolve(false);
   }
   setSync("שומר בענן…");
-  var url = CLOUD.url + "/rest/v1/kefel_state?id=eq." + encodeURIComponent(CLOUD.rowId) + "&select=data";
+  var url = CLOUD.url + "/rest/v1/kefel_state?id=eq." + encodeURIComponent(CLOUD.rowId) + "&select=data,updated_at";
   return fetch(url, {
     method: "GET",
     headers: cloudHeaders()
@@ -223,23 +223,40 @@ function cloudPull(){
     if(!res.ok) throw new Error("pull " + res.status);
     return res.json();
   }).then(function(rows){
+    function score(d){
+      if(!d || typeof d !== "object") return 0;
+      var answers = typeof d.answers === "number" ? d.answers : 0;
+      var sessions = d.sessions || [];
+      var withQ = 0;
+      for(var i = 0; i < sessions.length; i++){
+        if(sessions[i] && sessions[i].q > 0) withQ++;
+      }
+      return answers * 1000 + withQ;
+    }
+    var cloudData = null;
     if(rows && rows.length && rows[0] && rows[0].data){
       var data = rows[0].data;
       if(typeof data === "string"){
         try{ data = JSON.parse(data); }catch(e){ data = null; }
       }
-      if(data && typeof data === "object"){
-        db = data;
-        if(!db.facts) db.facts = {};
-        if(!db.sessions) db.sessions = [];
-        if(typeof db.answers !== "number") db.answers = 0;
-        saveLocal();
-        setSync("מסונכרן");
-        return true;
-      }
+      if(data && typeof data === "object") cloudData = data;
     }
-    setSync("מסונכרן");
-    return false;
+    var localScore = score(db);
+    var cloudScore = score(cloudData);
+    if(cloudScore > localScore){
+      db = cloudData;
+      if(!db.facts) db.facts = {};
+      if(!db.sessions) db.sessions = [];
+      if(typeof db.answers !== "number") db.answers = 0;
+      saveLocal();
+      setSync("מסונכרן");
+      return true;
+    } else if(localScore > 0 && localScore >= cloudScore){
+      return cloudPush();
+    } else {
+      setSync("מסונכרן");
+      return false;
+    }
   }).catch(function(){
     setSync("אין רשת — נשמר במכשיר");
     return false;
@@ -249,7 +266,7 @@ function cloudPull(){
 function cloudPush(){
   if(!cloudConfigured()) return Promise.resolve(false);
   setSync("שומר בענן…");
-  var url = CLOUD.url + "/rest/v1/kefel_state";
+  var url = CLOUD.url + "/rest/v1/kefel_state?on_conflict=id";
   var body = {
     id: CLOUD.rowId,
     data: db,
