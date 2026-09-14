@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -150,9 +151,9 @@
           + 5 if missed very recently (within last 12 answers)
           + 2 if never seen yet      -> pull unseen facts in early
           - decays toward 0.35 once streak >= 3 (mastered: rare, never gone)
-   Next question = weighted random pick, never the same fact twice in a row.
-   New session avoids the recent problem series; no duplicate fact inside a session.
-   Mistake weighting stays — after a few fresh exercises at session start.
+   VARIETY: recentKeys queue (~30) in localStorage — exclude / heavily
+   down-weight recently asked facts. Recently-wrong facts may return
+   after a gap of at least 5 other questions. Never identical back-to-back.
 ----------------------------------------------------------------*/
 
 var CLOUD = {
@@ -311,12 +312,7 @@ function currentSession(){
   var last = db.sessions[db.sessions.length-1];
   var now = Date.now();
   if(last && (now - last.last) < IDLE_MS){ session = last; return session; }
-  /* New session: avoid the recent problem series so Emilia does not see the same run again */
-  var avoid = (db.recentKeys || []).slice(-40);
-  session = {
-    start: now, last: now, ms: 0, q: 0, correct: 0, best: 0,
-    seenKeys: [], avoidKeys: avoid
-  };
+  session = { start: now, last: now, ms: 0, q: 0, correct: 0, best: 0 };
   db.sessions.push(session);
   save();
   return session;
@@ -329,51 +325,75 @@ function touchSession(){
 }
 
 /* ---------------- question picking ---------------- */
+var RECENT_CAP = 30, RECENT_WRONG_GAP = 5;
+
+function recentDist(k){
+  var q = db.recentKeys || [];
+  for(var i = q.length - 1; i >= 0; i--){
+    if(q[i] === k) return q.length - 1 - i; /* 0 = just asked */
+  }
+  return -1;
+}
+function isRecentlyWrong(f){
+  return f.lastWrongAt >= 0 && (db.answers - f.lastWrongAt) <= 12;
+}
+function rememberAsked(k){
+  if(!Array.isArray(db.recentKeys)) db.recentKeys = [];
+  db.recentKeys.push(k);
+  if(db.recentKeys.length > RECENT_CAP) db.recentKeys = db.recentKeys.slice(db.recentKeys.length - RECENT_CAP);
+}
 function weightOf(a,b){
   var f = fact(a,b);
-  if(f.seen === 0) return 3;
-  var wrongRate = f.wrong / f.seen;
-  var w = 1 + 6*wrongRate;
-  if(db.answers - f.lastWrongAt <= 12) w += 5;
-  if(f.streak >= 3) w = Math.max(0.35, w * 0.35);
+  var k = fkey(a,b);
+  var w;
+  if(f.seen === 0) w = 3;
+  else {
+    var wrongRate = f.wrong / f.seen;
+    w = 1 + 6*wrongRate;
+    if(db.answers - f.lastWrongAt <= 12) w += 5;
+    if(f.streak >= 3) w = Math.max(0.35, w * 0.35);
+  }
+  var dist = recentDist(k);
+  if(dist >= 0 && dist < RECENT_CAP){
+    /* Exclude recent asks; allow recently-wrong back after >=5 others */
+    if(isRecentlyWrong(f) && dist >= RECENT_WRONG_GAP){
+      /* keep boost, mild damp so it is not immediate spam */
+      w *= 0.85;
+    } else {
+      w *= 0.02; /* heavily down-weight (near-exclude) */
+    }
+  }
   return w;
 }
 var cur = null, prevKey = "";
 function nextQuestion(){
-  var s = currentSession();
-  if(!s.seenKeys) s.seenKeys = [];
-  if(!s.avoidKeys) s.avoidKeys = (db.recentKeys || []).slice(-40);
-  var seenSet = {};
-  for(var si = 0; si < s.seenKeys.length; si++) seenSet[s.seenKeys[si]] = true;
-  var avoidSet = {};
-  for(var ai = 0; ai < s.avoidKeys.length; ai++) avoidSet[s.avoidKeys[ai]] = true;
-
-  var preferFresh = s.q < 12;
   var pool = [], total = 0, a, b, w, k;
+  var soft = [], softTotal = 0; /* fallback if everything recent-excluded */
   for(a=1; a<=MAX; a++){
     for(b=1; b<=MAX; b++){
       k = fkey(a,b);
       if(k === prevKey) continue;
-      if(seenSet[k]) continue;
       w = weightOf(a,b);
-      /* Mistake review stays, but only after a few fresh exercises at session start */
-      if(preferFresh && avoidSet[k]) w *= 0.08;
-      else if(avoidSet[k]) w *= 0.35;
-      if(s.q < 4 && db.facts[k] && db.facts[k].wrong > 0 && db.answers - db.facts[k].lastWrongAt <= 12){
-        w *= 0.25;
+      var dist = recentDist(k);
+      var excluded = dist >= 0 && dist < RECENT_CAP && !(isRecentlyWrong(fact(a,b)) && dist >= RECENT_WRONG_GAP);
+      if(excluded){
+        soft.push({a:a, b:b, w: Math.max(0.01, w)});
+        softTotal += Math.max(0.01, w);
+        continue;
       }
       pool.push({a:a, b:b, w:w});
       total += w;
     }
   }
+  if(!pool.length){ pool = soft; total = softTotal; }
   if(!pool.length){
+    /* absolute fallback: any non-prev */
     for(a=1; a<=MAX; a++){
       for(b=1; b<=MAX; b++){
         k = fkey(a,b);
         if(k === prevKey) continue;
-        w = weightOf(a,b);
-        pool.push({a:a, b:b, w:w});
-        total += w;
+        pool.push({a:a, b:b, w:1});
+        total += 1;
       }
     }
   }
@@ -384,6 +404,7 @@ function nextQuestion(){
   }
   cur = { a: pick.a, b: pick.b };
   prevKey = fkey(cur.a, cur.b);
+  rememberAsked(prevKey);
   typed = "";
   render();
 }
@@ -410,12 +431,6 @@ function submit(){
   if(locked || typed === "") return;
   var val = parseInt(typed,10), f = fact(cur.a, cur.b), s = currentSession();
   touchSession();
-  var curKey = fkey(cur.a, cur.b);
-  if(!s.seenKeys) s.seenKeys = [];
-  if(s.seenKeys.indexOf(curKey) < 0) s.seenKeys.push(curKey);
-  if(!db.recentKeys) db.recentKeys = [];
-  db.recentKeys.push(curKey);
-  if(db.recentKeys.length > 80) db.recentKeys = db.recentKeys.slice(-80);
   f.seen++; s.q++; db.answers++;
   if(val === cur.a * cur.b){
     f.correct++; f.streak++;
