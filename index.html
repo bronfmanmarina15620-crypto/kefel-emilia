@@ -151,6 +151,8 @@
           + 2 if never seen yet      -> pull unseen facts in early
           - decays toward 0.35 once streak >= 3 (mastered: rare, never gone)
    Next question = weighted random pick, never the same fact twice in a row.
+   New session avoids the recent problem series; no duplicate fact inside a session.
+   Mistake weighting stays — after a few fresh exercises at session start.
 ----------------------------------------------------------------*/
 
 var CLOUD = {
@@ -173,7 +175,7 @@ function setSync(text){
   if(syncEl) syncEl.textContent = text || "";
 }
 
-function blank(){ return { facts:{}, sessions:[], answers:0 }; }
+function blank(){ return { facts:{}, sessions:[], answers:0, recentKeys:[] }; }
 function load(){
   try{
     var raw = localStorage.getItem(KEY);
@@ -248,6 +250,7 @@ function cloudPull(){
       if(!db.facts) db.facts = {};
       if(!db.sessions) db.sessions = [];
       if(typeof db.answers !== "number") db.answers = 0;
+      if(!Array.isArray(db.recentKeys)) db.recentKeys = [];
       saveLocal();
       setSync("מסונכרן");
       return true;
@@ -292,6 +295,7 @@ var db = load();
 if(!db.facts) db.facts = {};
 if(!db.sessions) db.sessions = [];
 if(typeof db.answers !== "number") db.answers = 0;
+if(!Array.isArray(db.recentKeys)) db.recentKeys = [];
 
 function fkey(a,b){ return (a<b? a+"x"+b : b+"x"+a); }
 function fact(a,b){
@@ -307,7 +311,12 @@ function currentSession(){
   var last = db.sessions[db.sessions.length-1];
   var now = Date.now();
   if(last && (now - last.last) < IDLE_MS){ session = last; return session; }
-  session = { start: now, last: now, ms: 0, q: 0, correct: 0, best: 0 };
+  /* New session: avoid the recent problem series so Emilia does not see the same run again */
+  var avoid = (db.recentKeys || []).slice(-40);
+  session = {
+    start: now, last: now, ms: 0, q: 0, correct: 0, best: 0,
+    seenKeys: [], avoidKeys: avoid
+  };
   db.sessions.push(session);
   save();
   return session;
@@ -331,13 +340,41 @@ function weightOf(a,b){
 }
 var cur = null, prevKey = "";
 function nextQuestion(){
-  var pool = [], total = 0, a, b, w;
+  var s = currentSession();
+  if(!s.seenKeys) s.seenKeys = [];
+  if(!s.avoidKeys) s.avoidKeys = (db.recentKeys || []).slice(-40);
+  var seenSet = {};
+  for(var si = 0; si < s.seenKeys.length; si++) seenSet[s.seenKeys[si]] = true;
+  var avoidSet = {};
+  for(var ai = 0; ai < s.avoidKeys.length; ai++) avoidSet[s.avoidKeys[ai]] = true;
+
+  var preferFresh = s.q < 12;
+  var pool = [], total = 0, a, b, w, k;
   for(a=1; a<=MAX; a++){
     for(b=1; b<=MAX; b++){
-      if(fkey(a,b) === prevKey) continue;
+      k = fkey(a,b);
+      if(k === prevKey) continue;
+      if(seenSet[k]) continue;
       w = weightOf(a,b);
+      /* Mistake review stays, but only after a few fresh exercises at session start */
+      if(preferFresh && avoidSet[k]) w *= 0.08;
+      else if(avoidSet[k]) w *= 0.35;
+      if(s.q < 4 && db.facts[k] && db.facts[k].wrong > 0 && db.answers - db.facts[k].lastWrongAt <= 12){
+        w *= 0.25;
+      }
       pool.push({a:a, b:b, w:w});
       total += w;
+    }
+  }
+  if(!pool.length){
+    for(a=1; a<=MAX; a++){
+      for(b=1; b<=MAX; b++){
+        k = fkey(a,b);
+        if(k === prevKey) continue;
+        w = weightOf(a,b);
+        pool.push({a:a, b:b, w:w});
+        total += w;
+      }
     }
   }
   var r = Math.random() * total, acc = 0, pick = pool[pool.length-1];
@@ -373,6 +410,12 @@ function submit(){
   if(locked || typed === "") return;
   var val = parseInt(typed,10), f = fact(cur.a, cur.b), s = currentSession();
   touchSession();
+  var curKey = fkey(cur.a, cur.b);
+  if(!s.seenKeys) s.seenKeys = [];
+  if(s.seenKeys.indexOf(curKey) < 0) s.seenKeys.push(curKey);
+  if(!db.recentKeys) db.recentKeys = [];
+  db.recentKeys.push(curKey);
+  if(db.recentKeys.length > 80) db.recentKeys = db.recentKeys.slice(-80);
   f.seen++; s.q++; db.answers++;
   if(val === cur.a * cur.b){
     f.correct++; f.streak++;
