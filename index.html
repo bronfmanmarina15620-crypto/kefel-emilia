@@ -71,6 +71,11 @@
   .pin{width:100%;padding:14px;font-size:22px;text-align:center;letter-spacing:8px;border-radius:16px;border:1px solid var(--line);direction:ltr}
   .note{color:var(--muted);font-size:12px;margin-top:8px;text-align:center}
   .center{text-align:center}.huge{font-size:56px}
+details.sx{border:1px solid #e3e3e3;border-radius:10px;margin:6px 0;padding:8px 10px;background:#fff}
+details.sx summary{cursor:pointer;font-weight:700;font-size:1.05em}details.sx summary small{font-weight:400;color:#888;margin-inline-start:8px}
+.sxq{font-size:1.5em;font-weight:700;text-align:center;margin:8px 0}.sxa{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.sxa .tr{background:#fde2e2;color:#b00020;border-radius:8px;padding:4px 10px}.sxa .ok{background:#dcf5e0;color:#1a7f37;border-radius:8px;padding:4px 10px;font-weight:700}
+.up{color:#1a7f37}.dn{color:#b00020}tr.wk td{color:#b00020;font-weight:700}.tip{background:#fff8e1;border-radius:8px;padding:6px 10px}#pDay{font-size:1em;padding:4px}
 </style>
 </head>
 <body>
@@ -690,22 +695,74 @@ function attentionToday(L){
   }
   return h;
 }
+var PSEL = 0;
+function dayStart(t){ var d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); }
+function tblOf(e){ if(e.type === "dd") return 0; var q = parseQ(e.k); return Math.max(q.a, q.b); }
+function rateOf(x){ return x.length ? x.filter(function(e){ return e.result === "first"; }).length / x.length : 0; }
+function daySummary(){
+  var days = {}; db.log.forEach(function(e){ days[dayStart(e.t)] = 1; });
+  var list = Object.keys(days).map(Number).sort(function(a,b){ return b-a; });
+  var today = dayStart(Date.now());
+  if(list.indexOf(today) < 0) list.unshift(today);
+  var sel = PSEL || today;
+  var h = '<h3>סיכום יומי</h3><div class="panel"><label>יום: <select id="pDay">';
+  list.slice(0,30).forEach(function(d){ h += '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + fmtDate(d) + (d === today ? ' (היום)' : '') + '</option>'; });
+  h += '</select></label>';
+  var D = db.log.filter(function(e){ return dayStart(e.t) === sel; });
+  var P = db.log.filter(function(e){ return e.t < sel && e.t >= sel - 7*DAY; });
+  if(!D.length){ h += '<p>ביום הזה לא היה תרגול.</p>'; }
+  else {
+    var r = rateOf(D), pr = rateOf(P);
+    var pDays = {}; P.forEach(function(e){ pDays[dayStart(e.t)] = 1; }); var pn = Object.keys(pDays).length;
+    h += '<p><b>' + D.length + '</b> תרגילים · <b>' + Math.round(100*r) + '%</b> נכון בניסיון ראשון</p>';
+    if(P.length){
+      var diff = Math.round(100*(r - pr));
+      h += '<p>בשבוע שלפני: ממוצע ' + Math.round(P.length/pn) + ' תרגילים ביום, ' + Math.round(100*pr) + '% הצלחה ' +
+        (diff > 4 ? '<span class="up">▲ שיפור של ' + diff + '%</span>' : diff < -4 ? '<span class="dn">▼ ירידה של ' + (-diff) + '%</span>' : '<span>— בערך אותו דבר</span>') + '</p>';
+    } else h += '<p>אין נתונים מהשבוע שלפני להשוואה.</p>';
+  }
+  h += '<table><tr><th>לוח</th><th>ביום הזה</th><th>שבוע לפני</th><th>מגמה</th></tr>';
+  var weak = [], notRecent = [], since = sel - 2*DAY;
+  for(var t = 2; t <= 10; t++){
+    var dt = D.filter(function(e){ return tblOf(e) === t; }), pt = P.filter(function(e){ return tblOf(e) === t; });
+    var recent = db.log.some(function(e){ return tblOf(e) === t && e.t >= since && e.t < sel + DAY; });
+    if(!recent) notRecent.push('×' + t);
+    var rr = rateOf(dt), isWeak = dt.length >= 2 && rr < 0.6; if(isWeak) weak.push('×' + t);
+    var trend = '—';
+    if(dt.length && pt.length){ var d2 = rr - rateOf(pt); trend = d2 > 0.05 ? '<span class="up">▲ השתפרה</span>' : d2 < -0.05 ? '<span class="dn">▼ ירדה</span>' : '= יציב'; }
+    else if(dt.length) trend = 'חדש השבוע';
+    h += '<tr' + (isWeak ? ' class="wk"' : '') + '><td dir="ltr">×' + t + '</td><td>' + (dt.length ? Math.round(100*rr) + '% (' + dt.length + ')' : '—') + '</td><td>' + (pt.length ? Math.round(100*rateOf(pt)) + '%' : '—') + '</td><td>' + trend + '</td></tr>';
+  }
+  h += '</table>';
+  if(weak.length) h += '<p class="dn">לוחות חלשים: <span dir="ltr">' + weak.join(', ') + '</span></p>';
+  if(notRecent.length) h += '<p>לא תרגלה ב־3 הימים האחרונים: <span dir="ltr">' + notRecent.join(', ') + '</span></p>';
+  var tip = weak.length ? 'לתרגל שוב את ' + weak.slice(0,2).join(' ו') : notRecent.length ? 'לחזור על ' + notRecent.slice(0,2).join(' ו') + ' שלא תורגלו לאחרונה' : 'סיבוב קצר של «מבחן קטן» לחיזוק';
+  h += '<p class="tip">💡 מחר כדאי ' + '<span dir="rtl">' + tip + '</span>.</p></div>';
+  return h;
+}
+document.addEventListener("change", function(e){ if(e.target && e.target.id === "pDay"){ PSEL = +e.target.value; buildParent(); } });
 function buildParent(){
   ensure();
   var host = $("parentBody"), L = todayLogs(), h = "";
+  h += daySummary();
   h += '<h3>קשב היום</h3><div class="panel">' + attentionToday(L) + '</div>';
 
-  /* exercises she could not solve (3 wrong tries) */
-  var stuck = db.log.filter(function(e){ return e.result === "adult"; }).slice(-30).reverse();
-  h += '<h3>תרגילים שלא הצליחה לפתור</h3><div class="panel">';
+  /* exercises she could not solve: collapsed rows, tap to open */
+  var stuck = db.log.filter(function(e){ return e.result === "adult" && (!PSEL || dayStart(e.t) === PSEL); }).slice(-40).reverse();
+  h += '<h3>תרגילים שלא הצליחה לפתור' + (PSEL ? ' — ' + fmtDate(PSEL) : '') + '</h3><div class="panel">';
   if(stuck.length){
-    h += '<table><tr><th>תאריך</th><th>תרגיל</th><th>מה ענתה בכל ניסיון</th><th>התשובה הנכונה</th></tr>';
+    h += '<div class="note">לחצי על תרגיל כדי לפתוח אותו.</div>';
     stuck.forEach(function(e){
-      var q = parseQ(e.k), tries = (e.answers||[]).map(function(a, i){ return (i+1) + ") " + (Array.isArray(a) ? a.join(" / ") : a); }).join("<br>");
-      h += '<tr><td>' + fmtDate(e.t) + ' ' + fmtTime(e.t) + '</td><td dir="ltr">' + qLabel(q) + '</td><td dir="ltr">' + (tries || "—") + '</td><td dir="ltr"><b>' + (q.a*q.b) + '</b></td></tr>';
+      var q = parseQ(e.k), ans = e.answers || [], ok = q.a*q.b;
+      var shown = function(a){ return String(Array.isArray(a) ? a.join(" / ") : a).split("|").join(" / "); };
+      h += '<details class="sx"><summary><span dir="ltr">' + qLabel(q) + '</span> <small>' + fmtDate(e.t) + ' ' + fmtTime(e.t) + '</small></summary>';
+      h += '<div class="sxq" dir="ltr">' + q.a + ' × ' + q.b + ' = ?</div><div class="sxa">';
+      if(ans.length){
+        ans.forEach(function(a, i){ h += '<span class="tr">' + (e.ordered === false ? '' : '<b>' + (i+1) + '</b> ') + '<span dir="ltr">' + (shown(a) || "—") + '</span></span>'; });
+      } else h += '<span class="note">לא נשמרו תשובות</span>';
+      h += '<span class="ok">✓ <span dir="ltr">' + ok + '</span></span></div></details>';
     });
-    h += '</table>';
-  } else h += '<div class="empty">אין כרגע תרגילים שלא הצליחה לפתור.</div>';
+  } else h += '<div class="empty">' + (PSEL ? 'ביום הזה פתרה הכול בעצמה.' : 'אין כרגע תרגילים שלא הצליחה לפתור.') + '</div>';
   h += '</div>';
 
   /* ranking hard -> easy by exercise type (last 300 exercises) */
