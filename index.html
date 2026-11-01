@@ -695,6 +695,19 @@ function buildParent(){
   var host = $("parentBody"), L = todayLogs(), h = "";
   h += '<h3>קשב היום</h3><div class="panel">' + attentionToday(L) + '</div>';
 
+  /* exercises she could not solve (3 wrong tries) */
+  var stuck = db.log.filter(function(e){ return e.result === "adult"; }).slice(-30).reverse();
+  h += '<h3>תרגילים שלא הצליחה לפתור</h3><div class="panel">';
+  if(stuck.length){
+    h += '<table><tr><th>תאריך</th><th>תרגיל</th><th>מה ענתה בכל ניסיון</th><th>התשובה הנכונה</th></tr>';
+    stuck.forEach(function(e){
+      var q = parseQ(e.k), tries = (e.answers||[]).map(function(a, i){ return (i+1) + ") " + (Array.isArray(a) ? a.join(" / ") : a); }).join("<br>");
+      h += '<tr><td>' + fmtDate(e.t) + ' ' + fmtTime(e.t) + '</td><td dir="ltr">' + qLabel(q) + '</td><td dir="ltr">' + (tries || "—") + '</td><td dir="ltr"><b>' + (q.a*q.b) + '</b></td></tr>';
+    });
+    h += '</table>';
+  } else h += '<div class="empty">אין כרגע תרגילים שלא הצליחה לפתור.</div>';
+  h += '</div>';
+
   /* ranking hard -> easy by exercise type (last 300 exercises) */
   var by = {};
   db.log.slice(-300).forEach(function(e){ var t = typeOf(e); var o = by[t] || (by[t] = {n:0, first:0, adult:0, name:t}); o.n++; if(e.result==="first") o.first++; if(e.result==="adult") o.adult++; });
